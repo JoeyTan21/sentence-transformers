@@ -90,8 +90,30 @@ def test_load_model2vec_mapping_and_weights(tmp_path: Path) -> None:
     expected = (embeddings[mapping] * weights[:, None]).float()
     assert torch.equal(static_embedding.embedding.weight.data, expected)
 
-    output = static_embedding(static_embedding.preprocess(["hello world", "foo"]))
+    texts = ["hello world", "foo"]
+    output = static_embedding(static_embedding.preprocess(texts))
     assert torch.allclose(output["sentence_embedding"], torch.tensor([[0.25, 1.25], [4.0, 4.0]]))
+
+    static_embedding.save(str(tmp_path))
+    reloaded = StaticEmbedding.load(str(tmp_path))
+    reloaded_output = reloaded(reloaded.preprocess(texts))
+    torch.testing.assert_close(reloaded_output["sentence_embedding"], output["sentence_embedding"], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("embedding_dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64])
+@pytest.mark.parametrize("weight_dtype", [torch.float16, torch.float32])
+def test_load_model2vec_small_weights(tmp_path: Path, embedding_dtype: torch.dtype, weight_dtype: torch.dtype) -> None:
+    tokenizer = Tokenizer(WordLevel({"[UNK]": 0, "hello": 1}, unk_token="[UNK]"))
+    tokenizer.save(str(tmp_path / "tokenizer.json"))
+    embeddings = torch.tensor([[0.0, 0.0], [1e-4, 2e-4]], dtype=embedding_dtype)
+    weights = torch.tensor([1.0, 1e-4], dtype=weight_dtype)
+    save_file({"embeddings": embeddings, "weights": weights}, str(tmp_path / "model.safetensors"))
+
+    model = StaticEmbedding.load(str(tmp_path))
+    output = model(model.preprocess(["hello"]))["sentence_embedding"]
+    expected_dtype = torch.float64 if embedding_dtype == torch.float64 else torch.float32
+    expected = (embeddings[1:].double() * weights[1].double()).to(expected_dtype)
+    torch.testing.assert_close(output, expected, rtol=1e-6, atol=0)
 
 
 @skip_if_no_model2vec()

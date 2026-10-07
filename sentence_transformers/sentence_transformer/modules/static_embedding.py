@@ -181,6 +181,7 @@ class StaticEmbedding(InputModule):
         if token_mapping is not None:
             embeddings = embeddings[torch.as_tensor(token_mapping, dtype=torch.long)]
         if token_weights is not None:
+            embeddings = embeddings.to(torch.promote_types(embeddings.dtype, torch.float32))
             token_weights = torch.as_tensor(token_weights)
             embeddings = (embeddings * token_weights[:, None]).to(embeddings.dtype)
         return embeddings.contiguous()
